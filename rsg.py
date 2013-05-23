@@ -1,7 +1,9 @@
 #!/bin/env python
 # -*- coding: utf8 -*-
-"""Génère une phrase aléatoire à partir du texte passé en paramètre
-ou par stdin"""
+"""
+	Random Sentence Generator
+	Generates a random sentence based on the input file(s)
+"""
 #~ Copyright © 2000 Etienne Noss <etienne.noss@etu.unistra.fr>
 #~ This work is free. You can redistribute it and/or modify it under the
 #~ terms of the Do What The Fuck You Want To Public License, Version 2,
@@ -13,7 +15,7 @@ import random
 import fileinput
 
 
-# Constantes
+# Constants
 SENTENCE_ENDS = "!?."
 SEPARATORS = ",/\.;"
 SPACELESS = "'-"
@@ -21,7 +23,7 @@ SPECIALCHARS = SENTENCE_ENDS + SEPARATORS + SPACELESS
 
 
 def main():
-	"""Décomposé pour plus de lisbilité"""
+	"""I should split that into separate files"""
 	# Créée la liste de couples de mots
 	tokens = parse_file()
 	# Génère aléatoirement une suite de mots
@@ -31,19 +33,21 @@ def main():
 
 
 def parse_file():
-	"""Créée un tableau contenant pour chaque couple de mots une liste de mots
-	pouvant les suivre"""
+	"""
+	Creates a dictionnary associating 2-word tuples with their
+	possible successors"""
 
-	# Reconnaît les mots et les caractères spéciaux séparément
+	# TODO: handle other special chars
 	regex = re.compile("([A-Za-zàâêéèîïôù]+|[" + SPECIALCHARS + "])")
 	words = dict()
 	lastlastword, lastword = None, None
 
-	# Parcourt chaque ligne du fichier puis chaque token de la ligne
+	# Iterates over each line in the input file(s),
+	# then over each word in that line
 	for line in fileinput.input():
 		for word in regex.findall(line):
-			# Met tout en minuscule pour pas créeer une entrée pour chaque
-			# casse possible du mot
+			# Turn every word into lowercase so we don't have a separate entry
+			# for Foo, foo and FOO
 			word = word.lower()
 			if lastword and lastlastword:
 				words.setdefault( (lastlastword, lastword), [] ).append(word)
@@ -52,8 +56,8 @@ def parse_file():
 
 
 def get_random_sequence(words, min_len = 3):
-	"""Génère une liste de mots aléatoires jusqu'à trouver une fin de phrase
-	Si le point est trouvé avant min_len on continue"""
+	"""Generate a random sequence of words until a setence ending character
+	is found"""
 	while True:
 		(lastlastword, lastword) = random.choice(words.keys())
 		w =  words[(lastlastword, lastword)]
@@ -61,14 +65,14 @@ def get_random_sequence(words, min_len = 3):
 			break
 	result = []
 
-	# Prend un mot au hasard, puis prend un mot pouvant le suivre au hasard, etc
+	# adds a random word, then a random word chosen among its successors,
+	# and so forth
 	while True:
 		word = random.choice(words[(lastlastword, lastword)])
 
 		result.append(word)
 		lastlastword, lastword = lastword, word
-		# Si on trouve une fin de phrase et qu'on a au moins la taille minimale
-		# On s'arrête
+		# if a sentence ending character is found, stop
 		if word in SENTENCE_ENDS and len(result) >= min_len:
 			break
 	return result
@@ -77,15 +81,14 @@ def titlecaseword(w):
 	return w[0].upper() + w[1:]
 
 def list_to_sentence(word_list):
-	"""Transforme une liste en phrase plus ou moins typographiquement juste"""
+	"""Turns a word list into a more or less typographically correct sentence"""
 	
 	prev = word_list[0]
-	# premier mot en majuscule
 	resulting_string = titlecaseword(prev)
 	
 	for word in word_list[1:]:
 		if word not in SPECIALCHARS and prev not in SPACELESS:
-			# on met des espaces entre les mots sauf si c'est pas des mots
+			# put spaces between words, except if they are not real words
 			resulting_string += " "
 		if prev in SENTENCE_ENDS:
 			word = titlecaseword(word)
