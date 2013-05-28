@@ -1,7 +1,7 @@
 # Random Sentence Generator
 
 This script takes one or more input files (or standard input) and generates random sentences based on it.
-It uses some sort of Markov Chain algorithm where each pair of words is associated with its possible successors.
+It uses some sort of Markov Chain algorithm where each pair of consecutive words is associated with its possible successors.
 
 ### Usage
 The -n option controls the minimum word count. The program will stop generating random text when that minimum is reached AND a sentence-ending character is encountered.
@@ -11,7 +11,7 @@ python rsg.py [input file(s)] [-n minimum word count]
 ```
 
 ### Example
-*Using the King James Version bible as input*
+*Using the King James Version Bible (included in the repository) as input*
 ```
 $python rsg.py kjv12.txt -n 20
 Like cheese? Thou hast slain him with your speeches. They shall eat, and went his way rejoicing.
@@ -24,12 +24,12 @@ La délégation de vote des assemblées parlementaires, des séances supplément
 ```
 
 ### Requirements
-* Python 2.5+
+* Python 2.5+ (to be honest, only tested in 2.6 and 2.7)
 * A long enough text
 
 ### Where to find long text files
 * The King James Version bible is included, it's a good start
-* [Project Gutemberg](http://www.gutenberg.org/) has a lot of cool ebooks downloadable in text format
+* [Project Gutenberg](http://www.gutenberg.org/) has a lot of cool ebooks downloadable in text format
 
 ### Flaws
 * Doesn't handle special characters very well
