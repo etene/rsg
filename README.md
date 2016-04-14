@@ -13,13 +13,13 @@ If no files are given as parameters, it reads from stdin, which means you can pi
 ### Example
 *Using the King James Version Bible (included in the repository) as input*
 ```
-./python rsg.py kjv12.txt -n 20
+./rsg.py kjv12.txt -n 20
 Like cheese? Thou hast slain him with your speeches. They shall eat, and went his way rejoicing.
 ```
 
 *Using the 1958 French Constitution*
 ```
-$ python rsg.py const.txt
+$ ./rsg.py const.txt
 La délégation de vote des assemblées parlementaires, des séances supplémentaires pour permettre, le crédit et les modalités prévues par une loi organique votée dans les mêmes termes par les lois peuvent être modifiés par décret les crédits se rapportant aux services votés.
 ```
 
@@ -35,6 +35,9 @@ La délégation de vote des assemblées parlementaires, des séances supplément
 * Doesn't retain the words' case
 * Parses the whole file at each run
 
+### Future improvement
+* Refine the regexs for better parsing
+* Save and load state from the disk to avoid re-parsing everything each time
 
 ### License
 See COPYING
