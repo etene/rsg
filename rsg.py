@@ -1,119 +1,202 @@
-#!/bin/env python
-# -*- coding: utf8 -*-
-"""Random Sentence Generator -- Generates random sentences (duh)"""
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
 
-#~ Copyright © 2013 Etienne Noss <etienne.noss@etu.unistra.fr>
-#~ This work is free. You can redistribute it and/or modify it under the
-#~ terms of the Do What The Fuck You Want To Public License, Version 2,
-#~ as published by Sam Hocevar. See http://www.wtfpl.net/ for more details.
+"""Random Sentence Generator -- Surprisingly, generates random sentences"""
 
+# Copyright © 2016 Etienne Noss
+# This work is free. You can redistribute it and/or modify it under the
+# terms of the Do What The Fuck You Want To Public License, Version 2,
+# as published by Sam Hocevar. See http://www.wtfpl.net/ for more details.
 
-# Imports
-import re
+from re import Scanner as ReScanner, UNICODE
+from collections import Counter, deque
 import random
-import fileinput
-import sys
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, FileType
 
 
-# Constants
-SENTENCE_ENDS = "!?."	# Characters that may end a sentence
-SEPARATORS = ",/\.;"	# Characters that may separate words
-SPACELESS = "'-"		# Characters that must'nt be surrounded with spaces
-SPECIALCHARS = SENTENCE_ENDS + SEPARATORS + SPACELESS
-DEFAULT_MIN_WORDS = 10	# Default minimum word count
+class Token(object):
+    """A token, matched by the regular expression scanner."""
+    # The regex to match against
+    RE = r""
+
+    def __init__(self, _, value):
+        """Creates the token with value.
+        The re module's Scanner class passes its instance as the second
+        argument, but we don't need it.
+        """
+        self.value = value
+
+    def __str__(self):
+        return self.value
+
+    def __hash__(self):
+        """The token's value hash"""
+        return hash(self.value)
+
+    def __repr__(self):
+        return "<{s.__class__.__name__}('{s.value}')>".format(s=self)
+
+    def __eq__(self, other):
+        assert isinstance(other, self.__class__)
+        return self.value == other.value
 
 
-# Functions
+class Word(Token):
+    """A simple word"""
+    RE = r"\w+"
+
+
+class Punctuation(Token):
+    """One or more regular punctuation characters"""
+    RE = r"[,:;]+"
+
+
+class SpaceLessPunctuation(Punctuation):
+    """A punctuation character which must not be surrounded with spaces"""
+    RE = r"[-']"
+
+
+class SentenceEnd(Punctuation):
+    """A punctuation character which marks the end of a sentence"""
+    RE = r"[!?\.]+"
+
+# A list of the token types defined above
+TOKEN_TYPES = [Word, Punctuation, SpaceLessPunctuation, SentenceEnd]
+
+
+class Scanner(ReScanner):
+    """A subclass of re's Scanner, with an added method to ease
+    scanning from a file-like object.
+    """
+    def scan_lines(self, source):
+        """Scans each line in the given iterable and yield its tokens"""
+        for line in source:
+            for token in self.scan(line.lower())[0]:
+                yield token
+
+
+class RandomSentenceGenerator(object):
+
+    """
+    The data used to generate sentences is represented as a hash table;
+    its keys are tuples of KEY_SIZE tokens and its values are weighted
+    lists of possible successors for the key. Assuming KEY_SIZE is 2,
+    this could be one of the hash table's entries :
+    ('hello', 'every'): {'body': 3, 'one': 1}
+
+    The get_tokens method can then be called to get a semi random succession
+    of tokens.
+    """
+
+    KEY_SIZE = 2
+
+    # The scanner takes a list of (regex, callback) tuples
+    scanner = Scanner([(t.RE, t) for t in TOKEN_TYPES] + [(r"[ ]+", None)],
+                      UNICODE)
+
+    def __init__(self):
+        self.data = {}
+        self._token_cache = {}
+        self._key_cache = []
+
+    def feed(self, iterable):
+        """Feed an iterable (yielding lines of text)"""
+        # FIFO queue containing the last KEY_SIZE tokens
+        last_tokens = deque(maxlen=self.KEY_SIZE)
+
+        # Scan each line, yielding tokens
+        for token in self.scanner.scan_lines(iterable):
+            # get the token from the cache or add it if nonexistent
+            token = self._token_cache.setdefault(token, token)
+
+            if len(last_tokens) == self.KEY_SIZE:
+                # add the current token as a possible successor to the last tokens
+                # XXX: should use a specialized counter that divides totals
+                #      by the gcd() on update
+                self.data.setdefault(tuple(last_tokens),
+                                     Counter()).update((token,))
+            last_tokens.append(token)
+
+        # update the key cache
+        self._key_cache = list(self.data.keys())
+
+    def get_tokens(self):
+        """Returns a generator that yields randomly selected tokens"""
+        key = deque(random.choice(self._key_cache), maxlen=self.KEY_SIZE)
+        while True:
+            weighted_successors = []
+            # TODO optimize this
+            # lame weighted-random implementation
+            for token, weight in self.data[tuple(key)].items():
+                weighted_successors.extend(token for i in range(weight))
+
+            yield key.popleft()
+            key.append(random.choice(weighted_successors))
+
+    def get_sentence(self, min_words=50):
+        """Returns a sentence of at least 'min_words' words"""
+
+        # Get a generator that returns tokens
+        tokens = self.get_tokens()
+        # Set to True every time a sentence-ending token is found
+        capitalize = True
+        sentence = []
+
+        while True:
+            # Get the next token
+            token = next(tokens)
+            # If we are at the beginning of a sentence and the current token
+            # is a punctuation character, skip it. It wouldn't make sense and
+            # would look weird.
+            if capitalize and isinstance(token, Punctuation):
+                continue
+
+            word = token.value
+            if capitalize:
+                # We are at the beginning of a sentence;
+                # capitalize the current word, and reset the flag
+                word = word.capitalize()
+                capitalize = False
+            else:
+                # If we are at the end of a sentence,
+                # set the flag to capitalize the next word.
+                capitalize = isinstance(token, SentenceEnd)
+
+            # If the current token is a punctuation character,
+            # pop the last space because there must be no spaces before it.
+            if isinstance(token, Punctuation) and sentence[-1].isspace():
+                sentence.pop()
+
+            # Add the current token to the sentence
+            sentence.append(word)
+
+            # Add a space except if the current token doesn't need one
+            if not isinstance(token, SpaceLessPunctuation):
+                sentence.append(' ')
+
+            # If we are at the end of a sentence and we've reached the
+            # required word count, we can return.
+            if capitalize and len(sentence) >= min_words:
+                break
+
+        return ''.join(sentence)
+
+
 def main():
-	"""I should split that into separate files"""
-	
-	if "-h" in sys.argv: # Print help and exit
-		print "usage: %s [input file(s)] [-n minimum word count]" % sys.argv[0]
-		sys.exit(0)
-	
-	min_words = DEFAULT_MIN_WORDS
-	if "-n" in sys.argv: # Parse the minimum word count
-		try:
-			min_words = int(sys.argv.pop(sys.argv.index("-n")+1))
-		except IndexError:
-			print "Option -n requires an argument (the minimum word count)."
-		except ValueError:
-			print "Invalid argument to -n (give it the minimum word count)."
-		sys.argv.remove("-n")
-	
-	# Create the word dictionnary
-	tokens = parse_file()
-	
-	try: # Generate a word sequence
-		seq = get_random_sequence(tokens, min_words)
-	except IndexError:
-		print "There seems to be an insufficient number of words in your input."
-		sys.exit(1)
-	
-	# Print it
-	print list_to_sentence(seq)
+    psr = ArgumentParser(description="Generate random sentences from text",
+                         formatter_class=ArgumentDefaultsHelpFormatter)
+    psr.add_argument("-n", "--min-words", type=int, default=50,
+                     help="resulting sentence's minimum word count")
+    psr.add_argument("textfile", type=FileType("r"), nargs="+",
+                     help="One or more (preferably large) text files "
+                          "to use as input")
+    args = psr.parse_args()
+
+    gen = RandomSentenceGenerator()
+    for txt in args.textfile:
+        gen.feed(txt)
+    print(gen.get_sentence(args.min_words))
 
 
-def parse_file():
-	"""Create a dictionnary associating 2-word tuples with their
-	possible successors"""
-	
-	# TODO: handle other special chars
-	regex = re.compile("([A-Za-zàâêéèîïôù€$£&]+|[" + SPECIALCHARS + "])")
-	words = dict()
-	lastlastword, lastword = None, None
-
-	# Iterates over each line in the input file(s),
-	# then over each word in that line
-	for line in fileinput.input():
-		for word in regex.findall(line):
-			# Turn every word into lowercase so we don't have a separate entry
-			# for Foo, foo and FOO
-			word = word.lower()
-			if lastword and lastlastword:
-				words.setdefault((lastlastword, lastword), []).append(word)
-			lastlastword, lastword = lastword, word
-	return words
-
-
-def get_random_sequence(words, min_len=50):
-	"""Generate a random sequence of words of at least min_len characters
-	until a sentence ending character is found"""
-	
-	while True:
-		(lastlastword, lastword) = random.choice(words.keys())
-		if lastlastword not in SPECIALCHARS:
-			break
-	result = [lastlastword, lastword]
-
-	# Adds a random word, then a random word chosen among its successors,
-	# and so forth.
-	while True:
-		word = random.choice(words[(lastlastword, lastword)])
-		result.append(word)
-		lastlastword, lastword = lastword, word
-		# if a sentence ending character is found, stop
-		if word in SENTENCE_ENDS and len(result) >= min_len:
-			break
-	return result
-
-
-def list_to_sentence(word_list):
-	"""Turns a word list into a more or less typographically correct sentence"""
-	
-	# Start the sentence with a title case word
-	resulting_string = previous_word = word_list[0].title()
-	for word in word_list[1:]:
-		if word not in SPECIALCHARS and previous_word not in SPACELESS:
-			# Put spaces between words, except if they are not real words
-			resulting_string += " "
-		if previous_word in SENTENCE_ENDS:
-			# If the previous word ended a sentence, titlecase this one
-			word = word.title()
-		resulting_string += word
-		previous_word = word
-	return resulting_string
-
-
-if __name__ == "__main__":
-	main()
+if __name__ == '__main__':
+    main()
