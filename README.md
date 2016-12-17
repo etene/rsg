@@ -4,22 +4,41 @@ This script takes one or more input files (or standard input) and generates rand
 It uses some sort of Markov Chain algorithm where each pair of consecutive words is associated with its possible successors.
 
 ### Usage
+TThe most simple case is to just pass a text file to the -t option. It will read that file and print some random text based on its contents.
+
+You can also use the -s option to save the parsed data to a state file that can be later restored by passing it to the -l option. This can be useful to avoid re-parsing large text files many times, which can be long.
+
 The -n option controls the minimum word count. The program will stop generating random text when that minimum is reached AND a sentence-ending character is encountered.
-If no files are given as parameters, it reads from stdin, which means you can pipe another program's input or use shell redirection.
+
 ```
-./rsg.py [input file(s)] [-n minimum word count]
+usage: rsg.py [-h] [-n MIN_WORDS] [-q] [-t TEXTFILE [TEXTFILE ...]] [-l FILE]
+              [-s FILE]
+
+Generate random sentences from text
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -n MIN_WORDS, --min-words MIN_WORDS
+                        Resulting sentence's minimum word count (default: 50)
+  -q, --quiet           Don't output anything (default: False)
+  -t TEXTFILE [TEXTFILE ...], --textfile TEXTFILE [TEXTFILE ...]
+                        One or more (preferably large) text files to use as
+                        input (default: None)
+  -l FILE, --load FILE  Restore a file saved with --save (default: None)
+  -s FILE, --save FILE  Save the inner state for later restoration, in order
+                        to avoid re-parsing text files (default: None)
 ```
 
 ### Example
 *Using the King James Version Bible (included in the repository) as input*
 ```
-./rsg.py kjv12.txt -n 20
+./rsg.py -t kjv12.txt -n 20
 Like cheese? Thou hast slain him with your speeches. They shall eat, and went his way rejoicing.
 ```
 
 *Using the 1958 French Constitution*
 ```
-$ ./rsg.py const.txt
+$ ./rsg.py -t const.txt
 La délégation de vote des assemblées parlementaires, des séances supplémentaires pour permettre, le crédit et les modalités prévues par une loi organique votée dans les mêmes termes par les lois peuvent être modifiés par décret les crédits se rapportant aux services votés.
 ```
 
@@ -33,11 +52,10 @@ La délégation de vote des assemblées parlementaires, des séances supplément
 
 ### Flaws
 * Doesn't retain the words' case
-* Parses the whole file at each run
+* -s and -l can't be used simultaneously at the moment
 
 ### Future improvement
 * Refine the regexs for better parsing
-* Save and load state from the disk to avoid re-parsing everything each time
 
 ### License
 See COPYING
