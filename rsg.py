@@ -1,21 +1,23 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+# pylint: disable=too-few-public-methods
 
-"""Random Sentence Generator -- Surprisingly, generates random sentences"""
+"""Random Sentence Generator -- Generates pseudo-random sentences from text"""
 
-# Copyright © 2016 Etienne Noss
+# Copyright © Etienne Noss
 # This work is free. You can redistribute it and/or modify it under the
 # terms of the Do What The Fuck You Want To Public License, Version 2,
 # as published by Sam Hocevar. See http://www.wtfpl.net/ for more details.
 
 from re import Scanner as ReScanner, UNICODE
-from collections import Counter, deque
+from collections import Counter, deque, defaultdict
 import random
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, FileType
 import pickle
 
 
 class Token(object):
+    # pylint: disable=invalid-name
     """A token, matched by the regular expression scanner."""
     # The regex to match against
     RE = r""
@@ -38,7 +40,8 @@ class Token(object):
         return "<{s.__class__.__name__}('{s.value}')>".format(s=self)
 
     def __eq__(self, other):
-        assert isinstance(other, self.__class__)
+        if not isinstance(other, self.__class__):
+            return NotImplemented
         return self.value == other.value
 
 
@@ -99,15 +102,14 @@ class RandomSentenceGenerator(object):
     def __init__(self):
         # Every function that modifies self._data
         # must call _update_key_cache() afterwards
-        self._data = {}
-        self._token_cache = {}
+        self._data = defaultdict(Counter)
         self._key_cache = []
 
     def _update_key_cache(self):
         """Call when you're done modifying self._data.
         We store key cache so we don't have to call self._data.keys()
         (which is expensive) every time we need its keys."""
-        self._key_cache = list(self._data.keys())
+        self._key_cache = list(self._data)
 
     def feed(self, iterable):
         """Feed an iterable (yielding lines of text)"""
@@ -116,55 +118,94 @@ class RandomSentenceGenerator(object):
 
         # Scan each line, yielding tokens
         for token in self.scanner.scan_lines(iterable):
-            # get the token from the cache or add it if nonexistent
-            token = self._token_cache.setdefault(token, token)
-
+            # add the token to the cache it if nonexistent
             if len(last_tokens) == self.KEY_SIZE:
-                # add the current token as a possible successor to the last tokens
+                # add current token as a possible successor to the last one
                 # XXX: should use a specialized counter that divides totals
                 #      by the gcd() on update
-                self._data.setdefault(tuple(last_tokens),
-                                      Counter()).update((token,))
+                key = tuple(last_tokens)
+                self._data[key].update((token,))
             last_tokens.append(token)
         self._update_key_cache()
 
     def restore_data(self, filep, replace=False):
         """Restores data previously saved to disk with save_data().
-        If replace is true, replaces any existing data, else updates it.
+        If replace evaluates to True, replaces any existing data,
+        else updates it as if it were parsed.
         """
         loaded = pickle.load(filep)
         if replace or not self._data:
             self._data = loaded
         else:
             for key, value in loaded.items():
-                if key in self._key_cache:
-                    self._data[key].update(value)
-                    self._update_key_cache()
-                else:
-                    self._data[key] = value
+                self._data[key].update(value)
         self._update_key_cache()
 
     def save_data(self, filep):
-        """Saves the data to a pickle-format file for later restoration.
-        """
+        """Saves the data to a pickle-format file for later restoration."""
         pickle.dump(self._data, filep)
+
+    def _get_random_key(self):
+        """Returns a key randomly chosen from self._data"""
+        return deque(random.choice(self._key_cache), maxlen=self.KEY_SIZE)
 
     def get_tokens(self):
         """Returns a generator that yields randomly selected tokens"""
-        key = deque(random.choice(self._key_cache), maxlen=self.KEY_SIZE)
+        key = self._get_random_key()
         while True:
             weighted_successors = []
             # TODO optimize this
             # lame weighted-random implementation
             for token, weight in self._data[tuple(key)].items():
                 weighted_successors.extend(token for i in range(weight))
-
             yield key.popleft()
-            key.append(random.choice(weighted_successors))
+            # If there were successors for this key,
+            # choose one of them to update it
+            if weighted_successors:
+                key.append(random.choice(weighted_successors))
+            else:
+                # That means there were no successors: choose a random key
+                key = self._get_random_key()
 
-    def get_sentence(self, min_words=50):
-        """Returns a sentence of at least 'min_words' words"""
+    @staticmethod
+    def _validate_min_max(min_words, max_words):
+        """Validate & set values for min_words & max_words, according to
+        get_sentences() docstring"""
+        default_min = False
+        if min_words is None:
+            # Default value for min_words
+            min_words = 50
+            default_min = True
+        elif min_words <= 0:
+            raise ValueError("'min_words' must be greater than 0")
+        if max_words is None:
+            # Default value for max_words
+            max_words = int(min_words * 1.2)
+        elif max_words <= 0:
+            raise ValueError("'max_words' must be greater than 0")
+        elif max_words < min_words:
+            # If only max_words was supplied and it's smaller than min_words,
+            # override min_words
+            if default_min is True:
+                min_words = max_words
+            else:
+                raise ValueError("'max_words' must be greater"
+                                 "than 'min_words'")
+        return min_words, max_words
 
+    def get_sentences(self, min_words=None, max_words=None):
+        """Returns text of at least 'min_words' and at most 'max_words'.
+
+        The text generation stops when it encounters a sentence-ending token
+        and the current text is at least 'min_words' long, or if the generated
+        text reaches 'max_words' in length.
+
+        The default value for 'min_words' is 50.
+        The default for 'max_words' is 'min_words' * 1.2.
+        """
+
+        # Validate params
+        min_words, max_words = self._validate_min_max(min_words, max_words)
         # Get a generator that returns tokens
         tokens = self.get_tokens()
         # Set to True every time a sentence-ending token is found
@@ -205,10 +246,10 @@ class RandomSentenceGenerator(object):
 
             # If we are at the end of a sentence and we've reached the
             # required word count, we can return.
-            if capitalize and len(sentence) >= min_words:
-                break
-
-        return ''.join(sentence)
+            joined_sentence = "".join(sentence)
+            slen = len(joined_sentence.split())
+            if (capitalize and slen >= min_words) or slen == max_words:
+                return joined_sentence
 
 
 def main():
@@ -245,7 +286,7 @@ def main():
 
     # Print a generated sentence
     if not args.quiet:
-        print(gen.get_sentence(args.min_words))
+        print(gen.get_sentences(args.min_words))
 
     # Pickle the data
     if args.save:
