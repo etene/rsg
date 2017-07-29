@@ -5,8 +5,11 @@ import unittest
 from rsg import *
 from tempfile import NamedTemporaryFile
 from os import unlink
+from sys import version_info
 from copy import deepcopy
 
+# use when converting a token to a string
+STR = unicode if version_info.major == 2 else str
 
 class TestToken(unittest.TestCase):
 
@@ -66,7 +69,7 @@ class TestScanner(unittest.TestCase):
 
         ]
         for (string, klass), token in zip(expected_tokens, tokens):
-            self.assertEqual(str(token), string)
+            self.assertEqual(STR(token), string)
             self.assertIsInstance(token, klass)
 
 
@@ -156,8 +159,15 @@ class TestRandomSentenceGenerator(unittest.TestCase):
 
             # Supplying only max_words should work as expected
             text = self.rsg.get_sentences(max_words=10)
-            self.assertGreater(11, len(text.split()), "sentence is longer "
+            self.assertGreater(11, len(text.split()), "text is longer "
                                "than the maximum passed length")
+
+            # Supplying both arguments
+            text = self.rsg.get_sentences(min_words=39, max_words=183)
+            self.assertGreater(184, len(text.split()), "text is longer "
+                               "than the maximum passed length")
+            self.assertGreater(len(text.split()), 37, "text is shorter than "
+                               "the passed minimum length")
 
             # Invalid parameters
             with self.assertRaises(ValueError):
